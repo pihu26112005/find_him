@@ -1,0 +1,20 @@
+# secrets / local config
+config.yaml
+*.local.yaml
+.env
+
+# audit + reports (may contain personal data)
+footprint-audit.log
+*.report.md
+*.report.json
+reports/
+
+# python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/

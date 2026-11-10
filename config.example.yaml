@@ -1,0 +1,21 @@
+# Copy to config.yaml (gitignored) and fill in what you have.
+# Everything is optional: a module with no key/tool is simply skipped and
+# reported as skipped. You never need all of it to get a useful report.
+
+# Breach exposure (recommended). Get a key: https://haveibeenpwned.com/API/Key
+hibp_api_key: ""
+
+# Optional: raises GitHub's unauthenticated rate limit. A read-only token is fine.
+github_token: ""
+
+# Engine behaviour
+timeout_seconds: 15     # per-module network timeout
+max_depth: 2            # how many rounds of "discovered identifier -> re-query"
+
+modules:
+  enabled: []           # empty = every configured module; or list names to restrict
+  disabled: []          # names to force off, e.g. ["holehe"]
+
+# Opt-out switches for the shell-out tools even if installed:
+# holehe_disabled: true
+# sherlock_disabled: true
