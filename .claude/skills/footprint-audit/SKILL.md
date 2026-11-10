@@ -59,8 +59,10 @@ email ──┬─ Gravatar profile ──► name, username, linked accounts, l
         ├─ local part ────────► username candidate ("jane.doe91@" -> jane.doe91)
         └─ domain checks ─────► MX, mail provider, disposable?
 
-username ─┬─ GitHub profile ──► name, company, location, blog, twitter
-          └─ Sherlock/Maigret ► public profile pages on ~400 sites
+username ─┬─ GitHub / GitLab ─► name, company, location, blog, linked socials
+          └─ Sherlock/Maigret ► public profile pages on ~480 sites
+
+found profiles ── Gravatar avatar hash == hash(seed email)? ──► confirmed link
 
 name / url / linked accounts ──► feed back in, 1–2 more rounds, then stop
 ```
@@ -110,7 +112,11 @@ hashed, not plaintext). Don't disable this.
 The report groups findings by the identifier they're about and surfaces
 "same-person signals" (a name/username seen from >1 source). When you write up
 results for the user:
-- Lead with the **strongest-confidence** items.
+- Lead with **Confirmed links**: an account whose Gravatar avatar hash equals
+  the hash of the seed email is provably registered with that email. For a
+  self-audit this is also a finding to fix — uploading a custom avatar on that
+  site removes the email hash from the public profile.
+- Then the **strongest-confidence** items.
 - Separate **confirmed** (subject published it: Gravatar, GitHub public profile,
   HIBP) from **leads** (a handle exists somewhere; same-person not proven).
 - Say plainly when the result is *empty* — for a careful person with a personal

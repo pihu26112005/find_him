@@ -116,11 +116,20 @@ reference example (~60 lines).
 | `dns_email` | email/domain | DNS, DoH fallback | no | MX, mail provider, disposable domain |
 | `holehe` | email | holehe library | no | sites with an account; masked recovery hints |
 | `github_user` | username | GitHub REST API | optional | public profile fields |
+| `gitlab_user` | username | GitLab REST API | no | public profile fields, linked socials |
 | `sherlock` | username | sherlock library | no | public profile pages across ~480 sites |
 
 Results are split three ways everywhere: **found**, **absent**, and
 **inconclusive** (blocked, rate-limited, bot-walled). Inconclusive is never
-reported as absent.
+reported as absent, and Sherlock/holehe verdicts are re-checked against the raw
+responses because both tools are too trusting on their own (see the module
+docstrings).
+
+**Correlation.** After a run, every avatar served by Gravatar on a found
+profile (GitLab, WordPress, Disqus, ...) is hash-compared with the seed
+email(s). A match proves the account is registered with that email and is
+reported under *Confirmed links*; the username and fields from that account are
+upgraded from "lead" to "confirmed".
 
 ## Test
 

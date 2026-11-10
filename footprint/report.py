@@ -30,6 +30,15 @@ def to_markdown(result: RunResult) -> str:
                  "datum belongs to the subject — verify before acting.")
     lines.append("")
 
+    # --- confirmed links ------------------------------------------------------
+    confirmed = [f for f in result.findings if f.module == "correlate"]
+    if confirmed:
+        lines.append("## Confirmed links to the seed email")
+        lines.append("")
+        for f in confirmed:
+            lines.append(f"- **{f.title}** — {f.data.get('method')}")
+        lines.append("")
+
     # --- same-person signals --------------------------------------------------
     names = Counter(i.value for i in result.identifiers if i.kind == Kind.NAME)
     usernames = Counter(i.value for i in result.identifiers if i.kind == Kind.USERNAME)

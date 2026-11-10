@@ -5,8 +5,11 @@ It answers "is this a real, deliverable, non-throwaway address, and who hosts
 its mail?" — the useful, low-risk signal for fraud/KYC and for self-audit.
 
 MX resolution: dnspython (plain DNS) first, then DNS-over-HTTPS via dns.google,
-which also works behind HTTPS-only proxies. A lookup that *fails* is reported as
-unknown — never as "no MX", which would be a false negative.
+which also works behind HTTPS-only proxies. Positive plain-DNS answers are
+trusted; a *negative* one (NXDOMAIN / no MX) is only trusted once DoH agrees,
+because sandboxed and filtering resolvers often answer NXDOMAIN for every
+external name. If neither can answer, MX is reported as unknown — never as
+"no MX", which would be a false negative.
 """
 from __future__ import annotations
 
@@ -22,6 +25,19 @@ _DISPOSABLE = {
     "mailinator.com", "guerrillamail.com", "10minutemail.com", "tempmail.com",
     "temp-mail.org", "throwawaymail.com", "yopmail.com", "trashmail.com",
     "getnada.com", "maildrop.cc", "sharklasers.com", "dispostable.com",
+}
+
+# Well-known mailbox providers by email domain (works offline, no DNS needed).
+_FREEMAIL = {
+    "gmail.com": "Google (Gmail)", "googlemail.com": "Google (Gmail)",
+    "outlook.com": "Microsoft (Outlook)", "hotmail.com": "Microsoft (Outlook)",
+    "live.com": "Microsoft (Outlook)", "msn.com": "Microsoft (Outlook)",
+    "yahoo.com": "Yahoo", "yahoo.co.in": "Yahoo", "ymail.com": "Yahoo",
+    "icloud.com": "Apple iCloud", "me.com": "Apple iCloud", "mac.com": "Apple iCloud",
+    "proton.me": "Proton Mail", "protonmail.com": "Proton Mail", "pm.me": "Proton Mail",
+    "zohomail.com": "Zoho", "zohomail.in": "Zoho", "aol.com": "AOL",
+    "gmx.com": "GMX", "gmx.net": "GMX", "yandex.com": "Yandex", "yandex.ru": "Yandex",
+    "mail.ru": "Mail.ru", "rediffmail.com": "Rediff", "tutanota.com": "Tuta",
 }
 
 # MX host suffix -> who runs the mailbox
@@ -51,9 +67,13 @@ class DnsEmailModule(Module):
                 return []
             domain = ident.value.rsplit("@", 1)[1].lower()
         else:
+            if ident.source == self.name:
+                return []  # domain we surfaced from an email: already covered
             domain = ident.value.lower()
 
         data: dict = {"domain": domain}
+        if domain in _FREEMAIL:
+            data["free_mail_provider"] = _FREEMAIL[domain]
         discovered: list[Identifier] = []
         if ident.kind == Kind.EMAIL:
             discovered.append(self.discover(Kind.DOMAIN, domain, ident.confidence))
@@ -63,7 +83,7 @@ class DnsEmailModule(Module):
 
         mx, via = await self._resolve_mx(domain, http)
         if mx is None:
-            data["mx_records"] = "unknown (DNS lookup failed)"
+            data["mx_records"] = "unknown (no DNS answer reachable from this network)"
         else:
             data["mx_records"] = mx
             data["has_mx"] = bool(mx)
@@ -89,9 +109,13 @@ class DnsEmailModule(Module):
 
     async def _resolve_mx(self, domain: str, http) -> tuple[list[str] | None, str]:
         mx = await asyncio.to_thread(_dnspython_mx, domain)
-        if mx is not None:
+        if mx:  # positive answers are trusted
             return mx, "dns"
-        return await _doh_mx(domain, http), "doh:dns.google"
+        # Plain DNS failed or said "no MX". Only DoH can confirm a negative.
+        doh = await _doh_mx(domain, http)
+        if doh is None:
+            return None, ""
+        return doh, "doh:dns.google"
 
 
 def _dnspython_mx(domain: str) -> list[str] | None:
