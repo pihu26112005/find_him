@@ -60,12 +60,18 @@ email ──┬─ Gravatar profile ──► name, username, linked accounts, l
         └─ domain checks ─────► MX, mail provider, disposable?
 
 username ─┬─ GitHub / GitLab ─► name, company, location, blog, linked socials
-          └─ Sherlock/Maigret ► public profile pages on ~480 sites
+          ├─ WhatsMyName ─────► ~690 curated sites, strict found/missing rules
+          └─ Maigret ─────────► ~1,000 of 5,900 sites + usernames/links on the
+                                profiles it finds ──► searched in turn
 
 found profiles ── Gravatar avatar hash == hash(seed email)? ──► confirmed link
 
 name / url / linked accounts ──► feed back in, 1–2 more rounds, then stop
 ```
+
+For a self-audit, ask the user for **every handle they use** and pass them as
+extra seeds: a handle that isn't the email's local part and isn't linked from a
+public profile can't be discovered, by this tool or by any honest one.
 
 Rules of thumb:
 - Depth 2 is plenty. Each extra round multiplies noise.
@@ -151,10 +157,13 @@ All open-source or public-API. This is the honest answer to "how do they do it":
   calendar (needs Google cookies; add as an opt-in module).
 - **EmailRep / emailrep.io** — reputation/metadata for an address. Key.
 
-**Username → profiles**
-- **Sherlock** — username across ~400 sites. Shelled out by the engine.
-- **Maigret** — like Sherlock, richer (extracts profile data, tags). Good upgrade.
-- **WhatsMyName** — the community data set those two draw from.
+**Username → profiles** (all three integrated)
+- **Maigret** — ~5,900 sites; extracts linked usernames/links from found
+  profiles, which the engine pivots on. Sites it can only check by
+  impersonating a browser's TLS fingerprint (bot-protection bypass) are skipped.
+- **WhatsMyName** — community dataset (~690 sites) with two-sided found/missing
+  rules; pinned to a commit and SHA-256-checked.
+- **Sherlock** — ~480 sites; steps aside when Maigret is installed.
 
 **Name / phone / general aggregation**
 - **SpiderFoot** — the big orchestrator: 200+ modules, email/name/domain/IP,

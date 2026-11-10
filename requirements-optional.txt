@@ -8,4 +8,7 @@
 
 dnspython>=2.6          # MX lookups over plain DNS (DoH fallback needs nothing)
 holehe>=1.61            # email -> which sites have an account
-sherlock-project>=0.16  # username -> public profile pages on ~480 sites
+maigret>=0.6            # username -> ~5,900-site database + linked-account extraction
+sherlock-project>=0.16  # username -> ~480 sites (only runs if maigret is absent,
+                        #   or with sherlock_enabled: true)
+# WhatsMyName needs no install: its dataset is downloaded (pinned + hash-checked).

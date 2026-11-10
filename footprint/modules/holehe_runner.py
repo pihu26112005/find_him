@@ -141,6 +141,7 @@ class HoleheModule(Module):
                 title=f"Account registered on {r['domain']}",
                 confidence=0.8,
                 url=f"https://{r['domain']}",
+                platform=r["domain"],
                 data=data,
                 evidence=(f"{r['domain']} confirmed this email is registered "
                           f"(via its {e.get('method') or 'public'} flow)."),

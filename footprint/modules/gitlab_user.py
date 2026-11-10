@@ -11,6 +11,7 @@ the seed email(s): a match proves the account is registered with that email.
 from __future__ import annotations
 
 from ..models import Finding, Identifier, Kind
+from ._web import handle_from_url
 from .base import Module
 
 _API = "https://gitlab.com/api/v4"
@@ -66,6 +67,7 @@ class GitlabUserModule(Module):
             discovered.append(self.discover(Kind.LOCATION, merged["location"], conf * 0.8))
         if merged.get("website_url"):
             discovered.append(self.discover(Kind.URL, merged["website_url"], conf * 0.8))
+            discovered += _handle(self, merged["website_url"], conf * 0.8)
         if merged.get("public_email"):
             discovered.append(self.discover(Kind.EMAIL, merged["public_email"], conf))
         if merged.get("linkedin"):
@@ -83,11 +85,22 @@ class GitlabUserModule(Module):
                 title=f"Public GitLab profile @{merged.get('username', username)}",
                 confidence=min(0.9, ident.confidence),
                 url=merged.get("web_url") or f"https://gitlab.com/{username}",
+                platform="GitLab",
                 data=data,
                 evidence="Fields the user made public on their GitLab profile.",
                 discovered=discovered,
             )
         ]
+
+
+def _handle(module, url: str, conf: float) -> list[Identifier]:
+    """A profile URL on another platform -> that platform's handle, to search."""
+    parsed = handle_from_url(url)
+    if not parsed or parsed[0] == "LinkedIn":  # LinkedIn slugs aren't reused handles
+        return []
+    platform, handle = parsed
+    d = module.discover(Kind.USERNAME, handle, conf)
+    return [Identifier(d.kind, d.value, f"{module.name}:{platform}", d.confidence)]
 
 
 def _raise_if_blocked(resp) -> None:

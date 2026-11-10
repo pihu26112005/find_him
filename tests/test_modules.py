@@ -40,7 +40,10 @@ def _run(coro):
 # -- email_localpart ------------------------------------------------------------
 def test_localpart_candidates():
     f = _run(EmailLocalPartModule().run(EMAIL, Config(), None))
-    assert f and f[0].data["candidates"] == ["jane.doe", "janedoe"]  # +tag dropped, gmail dots
+    # +tag dropped; gmail ignores dots (same mailbox); separator swaps rank lower
+    assert f and f[0].data["candidates"] == ["jane.doe", "janedoe", "jane_doe", "jane-doe"]
+    conf = {d.value: d.confidence for d in f[0].discovered}
+    assert conf["jane.doe"] == conf["janedoe"] == 0.5 and conf["jane_doe"] == 0.4
     assert all(d.kind == Kind.USERNAME and d.confidence <= 0.5 for d in f[0].discovered)
     assert _run(EmailLocalPartModule().run(Identifier(Kind.EMAIL, "info@acme.com"),
                                            Config(), None)) == []

@@ -46,6 +46,16 @@ class Module:
         """
         return not self.requires_config
 
+    def skip_reason(self, config: "Config") -> str | None:
+        """Why this module won't run with this config, or None if it will.
+
+        Override to give a specific reason (missing tool, superseded by another
+        module, ...); the default derives it from is_configured().
+        """
+        if self.is_configured(config):
+            return None
+        return "not configured (missing API key or external tool)"
+
     async def run(
         self, ident: Identifier, config: "Config", http: "httpx.AsyncClient"
     ) -> list[Finding]:  # pragma: no cover - overridden

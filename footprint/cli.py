@@ -42,7 +42,8 @@ def build_parser() -> argparse.ArgumentParser:
         description="Consent-gated public-source footprint auditor.",
     )
     p.add_argument("subjects", nargs="+",
-                   help="seed identifier(s): email, username, URL or domain")
+                   help="seed identifier(s): email, username, URL or domain. For a "
+                        "self-audit, pass every handle you use, not just the email")
     p.add_argument("--basis", required=True, choices=sorted(Basis.ALL),
                    help="legitimate basis: " +
                         "; ".join(f"{k}={v}" for k, v in Basis.HELP.items()))
@@ -55,6 +56,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--audit-log", default="footprint-audit.log",
                    help="append-only authorization log path")
     p.add_argument("--depth", type=int, default=None, help="override max discovery depth")
+    p.add_argument("--max-usernames", type=int, default=None,
+                   help="override how many usernames are searched (default 6)")
     p.add_argument("--format", choices=["md", "json"], default="md")
     p.add_argument("--out", default=None, help="write report to file instead of stdout")
     p.add_argument("--kind", choices=sorted(Kind.ALL), default=None,
@@ -66,6 +69,8 @@ async def _run(args) -> int:
     config = Config.load(args.config)
     if args.depth is not None:
         config.max_depth = args.depth
+    if args.max_usernames is not None:
+        config.max_usernames = args.max_usernames
 
     operator = args.operator or getpass.getuser()
     reference = args.reference or ("self" if args.basis == Basis.OWN else "")

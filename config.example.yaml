@@ -16,6 +16,9 @@ github_token: ""
 # Engine behaviour
 timeout_seconds: 15     # per-request network timeout
 max_depth: 2            # rounds of "discovered identifier -> re-query"
+max_usernames: 6        # usernames searched per run (most confident first)
+max_emails: 3           # emails searched per run
+min_pivot_confidence: 0.3  # discovered leads below this are listed, not searched
 
 modules:
   enabled: []           # empty = every configured module; or list names to restrict
@@ -27,7 +30,27 @@ modules:
 # holehe_only: [instagram, twitter, spotify]   # restrict to these modules
 # holehe_concurrency: 12
 
-# --- sherlock (username -> profile pages) ---
+# --- whatsmyname (username -> ~690 curated sites, strict two-sided checks) ---
+# wmn_disabled: true
+# wmn_nsfw: false
+# wmn_exclude_categories: [dating]
+# wmn_categories: [social, coding]          # restrict to these categories
+# wmn_concurrency: 25
+# wmn_timeout: 10
+# wmn_data_path: /path/to/wmn-data.json     # use a local copy of the dataset
+# wmn_data_url: https://...                 # another version (not hash-pinned)
+
+# --- maigret (username -> ~1,000 of 5,900 sites; extracts linked accounts) ---
+# maigret_disabled: true
+# maigret_top_sites: 500                    # plus every site tagged maigret_tags
+# maigret_tags: [social]
+# maigret_exclude_tags: [porn, erotic, dating]
+# maigret_sites: [GitHub, Reddit]           # restrict to these site names
+# maigret_connections: 40
+# maigret_timeout: 10
+
+# --- sherlock (username -> profile pages; off when maigret is installed) ---
+# sherlock_enabled: true    # run it alongside maigret anyway
 # sherlock_disabled: true
 # sherlock_nsfw: false
 # sherlock_sites: [GitHub, Reddit, LeetCode]   # restrict to these site names

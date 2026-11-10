@@ -9,6 +9,7 @@ add an opt-in module behind an explicit flag.)
 from __future__ import annotations
 
 from ..models import Finding, Identifier, Kind
+from ._web import handle_from_url
 from .base import Module
 
 
@@ -56,6 +57,11 @@ class GithubUserModule(Module):
             discovered.append(self.discover(Kind.LOCATION, u["location"], ident.confidence * 0.7))
         if u.get("blog"):
             discovered.append(self.discover(Kind.URL, u["blog"], ident.confidence * 0.8))
+            parsed = handle_from_url(u["blog"])
+            if parsed and parsed[0] != "LinkedIn":
+                d = self.discover(Kind.USERNAME, parsed[1], ident.confidence * 0.8)
+                discovered.append(Identifier(d.kind, d.value, f"{self.name}:{parsed[0]}",
+                                             d.confidence))
         if u.get("twitter_username"):
             discovered.append(
                 self.discover(Kind.USERNAME, u["twitter_username"], ident.confidence * 0.7)
@@ -68,6 +74,7 @@ class GithubUserModule(Module):
                 title=f"Public GitHub profile @{username}",
                 confidence=min(0.9, ident.confidence),
                 url=u.get("html_url"),
+                platform="GitHub",
                 data=data,
                 evidence="Fields the user set to public on their GitHub profile.",
                 discovered=discovered,

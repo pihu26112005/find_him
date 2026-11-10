@@ -14,6 +14,7 @@ from __future__ import annotations
 import hashlib
 
 from ..models import Finding, Identifier, Kind
+from ._web import handle_from_url
 from .base import Module
 
 
@@ -61,6 +62,7 @@ class GravatarModule(Module):
             accounts.append({"service": acc.get("service_label") or acc.get("service_type"),
                              "url": acc["url"]})
             discovered.append(self.discover(Kind.URL, acc["url"], ident.confidence))
+            discovered += self._handles(acc["url"], ident.confidence)
         if accounts:
             data["verified_accounts"] = accounts
         if p.get("avatar_url"):
@@ -110,6 +112,7 @@ class GravatarModule(Module):
                 accounts.append({"service": acc.get("shortname") or acc.get("domain"),
                                  "url": acc["url"]})
                 discovered.append(self.discover(Kind.URL, acc["url"], ident.confidence))
+                discovered += self._handles(acc["url"], ident.confidence)
             if acc.get("username"):
                 discovered.append(self.discover(Kind.USERNAME, acc["username"],
                                                 ident.confidence * 0.9))
@@ -123,6 +126,15 @@ class GravatarModule(Module):
         return [self._finding(ident, e.get("profileUrl") or f"https://gravatar.com/{md5}",
                               data, discovered)]
 
+    def _handles(self, url: str, conf: float) -> list[Identifier]:
+        """A linked profile URL -> that platform's handle, so it gets searched."""
+        parsed = handle_from_url(url)
+        if not parsed or parsed[0] == "LinkedIn":
+            return []
+        platform, handle = parsed
+        d = self.discover(Kind.USERNAME, handle, conf)
+        return [Identifier(d.kind, d.value, f"{self.name}:{platform}", d.confidence)]
+
     def _finding(self, ident, url, data, discovered) -> Finding:
         return Finding(
             module=self.name,
@@ -130,6 +142,7 @@ class GravatarModule(Module):
             title="Public Gravatar profile",
             confidence=min(0.95, ident.confidence),
             url=url,
+            platform="Gravatar",
             data=data,
             evidence="Subject published a Gravatar profile tied to this email hash.",
             discovered=discovered,

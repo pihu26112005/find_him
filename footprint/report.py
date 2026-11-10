@@ -39,6 +39,33 @@ def to_markdown(result: RunResult) -> str:
             lines.append(f"- **{f.title}** — {f.data.get('method')}")
         lines.append("")
 
+    # --- accounts table -------------------------------------------------------
+    rows = accounts(result)
+    counts = {}
+    for r in rows:
+        counts[r["status"]] = counts.get(r["status"], 0) + 1
+    lines.append(f"## Accounts found ({len(rows)})")
+    lines.append("")
+    if rows:
+        lines.append("CONFIRMED = proven tied to the email · EMAIL REGISTERED = the site "
+                     "says this email has an account · LEAD = a profile with this handle "
+                     "exists (may be someone else)")
+        lines.append("")
+        lines.append("| status | platform | account | found by |")
+        lines.append("|--------|----------|---------|----------|")
+        for r in rows:
+            account = r["url"] or r["platform"]
+            if r["handle"]:
+                account = f"{account} (`{r['handle']}`)"
+            lines.append(f"| {r['status']} | {r['platform']} | {account} | "
+                         f"{', '.join(r['modules'])} |")
+        lines.append("")
+        lines.append("Totals: " + " · ".join(f"{k}: {v}" for k, v in counts.items()))
+    else:
+        lines.append("_No accounts found. Inconclusive checks (see each module below) "
+                     "are not evidence of absence._")
+    lines.append("")
+
     # --- same-person signals --------------------------------------------------
     names = Counter(i.value for i in result.identifiers if i.kind == Kind.NAME)
     usernames = Counter(i.value for i in result.identifiers if i.kind == Kind.USERNAME)
@@ -110,6 +137,52 @@ def to_markdown(result: RunResult) -> str:
     lines.append("- Clear old data-broker listings (most honor opt-out requests).")
     lines.append("")
     return "\n".join(lines)
+
+
+_ORDER = {"CONFIRMED": 0, "EMAIL REGISTERED": 1, "LEAD + email registered on site": 2,
+          "LEAD": 3}
+
+
+def _norm(url: str) -> str:
+    u = url.lower().split("://", 1)[-1].split("?", 1)[0].rstrip("/")
+    return u[4:] if u.startswith("www.") else u
+
+
+def accounts(result: RunResult) -> list[dict]:
+    """Merge every account-level finding (any engine) into one row per account."""
+    confirmed = {_norm(f.url) for f in result.findings if f.module == "correlate" and f.url}
+    email_sites = {f.platform.lower() for f in result.findings
+                   if f.module == "holehe" and f.platform}
+    groups: dict[str, dict] = {}
+    for f in result.findings:
+        if not f.platform:
+            continue
+        by_email = f.module == "holehe"
+        key = ("email:" + f.platform.lower()) if (by_email or not f.url) else _norm(f.url)
+        g = groups.setdefault(key, {
+            "platform": f.platform, "url": None if by_email else f.url,
+            "handle": None if by_email or f.subject.kind != Kind.USERNAME else f.subject.value,
+            "modules": [], "confidence": 0.0, "by_email": by_email, "confirmed": False})
+        if f.module not in g["modules"]:
+            g["modules"].append(f.module)
+        g["confidence"] = max(g["confidence"], f.confidence)
+        if key in confirmed or f.confidence >= 0.95:
+            g["confirmed"] = True
+
+    rows = []
+    for key, g in groups.items():
+        host = _norm(g["url"] or "").split("/", 1)[0]
+        if g["confirmed"]:
+            status = "CONFIRMED"
+        elif g["by_email"]:
+            status = "EMAIL REGISTERED"
+        elif host in email_sites:
+            status = "LEAD + email registered on site"
+        else:
+            status = "LEAD"
+        rows.append({**g, "status": status})
+    rows.sort(key=lambda r: (_ORDER[r["status"]], -r["confidence"], r["platform"].lower()))
+    return rows
 
 
 def _conf_bar(c: float) -> str:

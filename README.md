@@ -45,7 +45,7 @@ This repo implements 1–3, 5 and a conservative 6, with the hooks to add 4.
 python3 -m venv .venv
 .venv/bin/pip install -U pip setuptools wheel
 .venv/bin/pip install -r requirements.txt                  # core: httpx + pyyaml
-.venv/bin/pip install -r requirements-optional.txt         # holehe, sherlock, dnspython
+.venv/bin/pip install -r requirements-optional.txt         # holehe, maigret, sherlock, dnspython
 cp config.example.yaml config.yaml                         # optional keys (gitignored)
 ```
 
@@ -85,8 +85,9 @@ seed identifier(s)
  orchestrator ──┐  async fan-out, per-module timeouts, depth-limited
       │         │  discovered identifiers fed back in (confidence decays)
       ▼         │
-   modules ◄────┘  one public source each: gravatar, xposedornot, hibp,
-      │            email_localpart, dns_email, github_user, holehe, sherlock
+   modules ◄────┘  one source each: gravatar, xposedornot, hibp, email_localpart,
+      │            dns_email, holehe, github_user, gitlab_user, whatsmyname,
+      │            maigret, sherlock
       ▼
  RunResult ──► report.py ──► Markdown / JSON (+ same-person signals)
 ```
@@ -117,7 +118,9 @@ reference example (~60 lines).
 | `holehe` | email | holehe library | no | sites with an account; masked recovery hints |
 | `github_user` | username | GitHub REST API | optional | public profile fields |
 | `gitlab_user` | username | GitLab REST API | no | public profile fields, linked socials |
-| `sherlock` | username | sherlock library | no | public profile pages across ~480 sites |
+| `whatsmyname` | username | WhatsMyName dataset (pinned, hash-checked) | no | profiles on ~690 curated sites (195 social); strict found/missing rules |
+| `maigret` | username | maigret library | no | profiles on ~1,000 of 5,900 sites; usernames and links extracted from found profiles |
+| `sherlock` | username | sherlock library | no | profiles on ~480 sites (steps aside when maigret is installed) |
 
 Results are split three ways everywhere: **found**, **absent**, and
 **inconclusive** (blocked, rate-limited, bot-walled). Inconclusive is never
@@ -131,11 +134,33 @@ email(s). A match proves the account is registered with that email and is
 reported under *Confirmed links*; the username and fields from that account are
 upgraded from "lead" to "confirmed".
 
+## Getting the most complete self-audit
+
+- **Give it every identifier you have.** Other usernames, a second email: the
+  tool can only find a handle that is your email's local part, a variant of it,
+  or linked from a profile it found. `python -m footprint --basis own
+  you@gmail.com your_insta_handle your_x_handle`
+- **Run it from an ordinary network.** Sandboxes and corporate proxies block
+  most social sites; those checks show up as *inconclusive*, never as absent.
+- **Raise the bounds for a deep run** with `--max-usernames` or `max_depth`.
+- **Linked accounts are followed.** Usernames and profile links that Gravatar,
+  GitHub, GitLab or Maigret find on your profiles are searched in turn.
+
+What it won't find, by design: accounts whose handle appears nowhere public;
+private or deleted accounts; data-broker records (paid people-search sites buy
+those — this tool doesn't); and sites that can only be checked by impersonating
+a browser to get past bot protection (~70 of Maigret's, including Instagram and
+Threads — Instagram is still covered by WhatsMyName and holehe's email check).
+
+WhatsMyName data © Micah Hoffman and contributors, CC BY-SA 4.0
+(github.com/WebBreacher/WhatsMyName); downloaded at runtime, not redistributed.
+
 ## Test
 
 ```bash
 .venv/bin/python tests/test_offline.py   # engine logic, gate, report (no network)
 .venv/bin/python tests/test_modules.py   # every module vs mocked HTTP/tools (no network)
+.venv/bin/python tests/test_engines.py   # username engines, pivoting, bounds, accounts table
 ```
 
 ## Legitimate use

@@ -5,110 +5,32 @@ sites, whether a profile page exists for a handle. We call it as a library with
 its bundled site list (no download), NSFW sites off, and read its per-site
 status instead of parsing terminal output.
 
-Sherlock's own verdicts are too trusting, so each one is re-checked against the
-raw response it recorded:
+When Maigret is installed this module steps aside by default: Maigret's database
+is a superset of Sherlock's with stricter checks, and running both doubles the
+traffic to every site (inviting rate limits). Set `sherlock_enabled: true` to
+run both.
 
-  * "status_code" sites: sherlock calls ANY non-2xx response "available", so a
-    403 bot-block, 429 rate limit or 5xx outage became a false "absent".
-  * "message" sites: a block page that lacks the site's not-found text became
-    a false "claimed".
-  * redirects to bot-checks ("Security Verification", Cloudflare "Just a
-    moment...") come back as 200 and were read as "claimed".
-
-So a verdict backed by a bot wall or a 401/403/407/429/5xx response is
-downgraded to inconclusive. "status_code" sites are checked with HEAD requests,
-which carry no body to inspect, so every such "found" hit is re-fetched once
-with GET and its final URL and page are checked for bot walls and login
-redirects before it is reported. Final verdicts:
+Sherlock's own verdicts are too trusting, so each one is re-checked (see
+_web.py): "status_code" sites call ANY non-2xx response "available", "message"
+sites call a block page "claimed", and HEAD-only hits have no body to inspect,
+so they are re-fetched with GET before being reported.
 
   found        -> a profile page exists for the handle            (lead)
   absent       -> the site's own not-found response                (absent)
   not valid    -> handle isn't a legal username on that site       (n/a)
   inconclusive -> error, block, bot wall or rate limit             (unknown)
 
-This is the "username pivot": it proves a handle exists on a site, not that it
-belongs to the same human. Many common handles are taken by different people.
-Found pages that embed a Gravatar avatar get its hash extracted, so the
-orchestrator can check whether it matches a seed email (a hard link).
+It proves a handle exists on a site, not that it belongs to the same human.
 """
 from __future__ import annotations
 
 import asyncio
 import importlib.util
 import os
-import re
 
 from ..models import Finding, Identifier, Kind
+from ._web import avatar_hashes, classify, verify_hit  # noqa: F401  (re-exported)
 from .base import Module
-
-_BLOCKED_STATUSES = {401, 403, 407, 429}
-
-# Markers of bot walls / interstitials / policy blocks, matched case-insensitively.
-_WALL_MARKERS = (
-    "just a moment...",                     # Cloudflare challenge
-    "attention required! | cloudflare",
-    "/cdn-cgi/challenge-platform",
-    "checking your browser",
-    "security verification",                # Apple and others
-    "verify-human",
-    "_incapsula_resource",                  # Imperva
-    "px-captcha",                           # PerimeterX
-    "ddos protection by",
-    "this github api path is not available",  # sandboxed GitHub proxy policy
-)
-
-# A HEAD-confirmed hit whose GET lands on one of these paths is a soft 404 / wall.
-_WALL_URL_MARKERS = ("verify-human", "captcha", "/challenge", "/login", "/signin",
-                     "/sign_in", "/sign-in", "/auth/", "/accounts/login")
-
-# Same UA sherlock uses, so the re-check sees what sherlock's request saw.
-_UA = "Mozilla/5.0 (X11; Linux x86_64; rv:129.0) Gecko/20100101 Firefox/129.0"
-
-_GRAVATAR_RE = re.compile(r"gravatar\.com/avatar/([0-9a-f]{64}|[0-9a-f]{32})", re.I)
-
-
-async def verify_hit(http, url: str) -> tuple[str, str]:
-    """GET a HEAD-only hit. Returns (verdict, page text) with verdict one of
-    ok / walled / blocked / gone."""
-    try:
-        r = await http.get(url, headers={"User-Agent": _UA})
-    except Exception:
-        return "blocked", ""
-    text = r.text[:400_000]
-    final = str(r.url).lower()
-    if (any(m in final for m in _WALL_URL_MARKERS)
-            or any(m in text.lower() for m in _WALL_MARKERS)):
-        return "walled", text
-    if r.status_code in _BLOCKED_STATUSES or r.status_code >= 500:
-        return "blocked", text
-    if r.status_code >= 400:
-        return "gone", text
-    return "ok", text
-
-
-def classify(label: str, http_status, response_text) -> str:
-    """Map sherlock's status + the raw response to a trustworthy verdict."""
-    text = _text(response_text).lower()
-    walled = any(m in text for m in _WALL_MARKERS)
-    blocked = isinstance(http_status, int) and (
-        http_status in _BLOCKED_STATUSES or http_status >= 500)
-    if label == "CLAIMED":
-        return "inconclusive" if (walled or blocked) else "found"
-    if label == "AVAILABLE":
-        return "inconclusive" if (walled or blocked) else "absent"
-    if label == "ILLEGAL":
-        return "not_valid"
-    return "inconclusive"  # UNKNOWN, WAF, anything new
-
-
-def avatar_hashes(response_text) -> list[str]:
-    return sorted({h.lower() for h in _GRAVATAR_RE.findall(_text(response_text))})
-
-
-def _text(response_text) -> str:
-    if isinstance(response_text, bytes):
-        return response_text[:400_000].decode("utf-8", errors="replace")
-    return str(response_text or "")[:400_000]
 
 
 class SherlockModule(Module):
@@ -118,10 +40,16 @@ class SherlockModule(Module):
     propagation = 0.6
     run_timeout = 300.0
 
-    def is_configured(self, config) -> bool:
+    def skip_reason(self, config) -> str | None:
         if config.extra.get("sherlock_disabled"):
-            return False
-        return importlib.util.find_spec("sherlock_project") is not None
+            return "disabled in config"
+        if importlib.util.find_spec("sherlock_project") is None:
+            return "not installed (pip install sherlock-project)"
+        if (importlib.util.find_spec("maigret") is not None
+                and not config.extra.get("sherlock_enabled")):
+            return ("maigret is installed and covers sherlock's sites "
+                    "(set sherlock_enabled: true to run both)")
+        return None
 
     async def run(self, ident: Identifier, config, http) -> list[Finding]:
         username = ident.value.strip().lstrip("@")
@@ -158,14 +86,14 @@ class SherlockModule(Module):
 
         findings: list[Finding] = []
         for site, url, hashes in found:
-            data = {"avatar_hashes": hashes} if hashes else {}
             findings.append(Finding(
                 module=self.name,
                 subject=ident,
                 title=f"Handle '{username}' has a profile on {site}",
                 confidence=round(0.6 * ident.confidence, 3),
                 url=url,
-                data=data,
+                platform=site,
+                data={"avatar_hashes": hashes} if hashes else {},
                 evidence="Profile page exists for this handle; same person not proven.",
                 discovered=[self.discover(Kind.URL, url, ident.confidence)] if url else [],
             ))
@@ -188,7 +116,7 @@ class SherlockModule(Module):
         return findings
 
 
-def _run_sherlock(username: str, config) -> dict:
+def _run_sherlock(username: str, config):
     import sherlock_project
     from sherlock_project.notify import QueryNotify
     from sherlock_project.sherlock import sherlock

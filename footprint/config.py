@@ -13,6 +13,11 @@ class Config:
     github_token: str = ""
     timeout_seconds: float = 15.0
     max_depth: int = 2
+    # bound the search: how many usernames / emails get searched per run, and
+    # how sure a discovered lead must be before it is searched itself
+    max_usernames: int = 6
+    max_emails: int = 3
+    min_pivot_confidence: float = 0.3
     # module name allow/deny lists; empty allow = "all configured modules"
     enabled: list[str] = field(default_factory=list)
     disabled: list[str] = field(default_factory=list)
@@ -45,11 +50,15 @@ class Config:
             github_token=str(data.get("github_token", "") or ""),
             timeout_seconds=float(data.get("timeout_seconds", 15.0)),
             max_depth=int(data.get("max_depth", 2)),
+            max_usernames=int(data.get("max_usernames", 6)),
+            max_emails=int(data.get("max_emails", 3)),
+            min_pivot_confidence=float(data.get("min_pivot_confidence", 0.3)),
             enabled=list(modules.get("enabled", []) or []),
             disabled=list(modules.get("disabled", []) or []),
             extra={k: v for k, v in data.items()
                    if k not in {"hibp_api_key", "github_token", "timeout_seconds",
-                                "max_depth", "modules"}},
+                                "max_depth", "max_usernames", "max_emails",
+                                "min_pivot_confidence", "modules"}},
         )
 
         # env overrides

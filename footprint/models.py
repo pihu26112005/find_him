@@ -56,6 +56,9 @@ class Finding:
     evidence: str = ""
     # New identifiers this finding surfaced, to be fed back into the engine.
     discovered: list[Identifier] = field(default_factory=list)
+    # Set when this finding is about one account on one site (e.g. "Instagram",
+    # "instagram.com"); the report merges these into the accounts table.
+    platform: str | None = None
     ts: float = field(default_factory=time.time)
 
     def to_dict(self) -> dict[str, Any]:
@@ -63,6 +66,7 @@ class Finding:
             "module": self.module,
             "subject": {"kind": self.subject.kind, "value": self.subject.value},
             "title": self.title,
+            "platform": self.platform,
             "confidence": round(self.confidence, 3),
             "url": self.url,
             "data": self.data,
