@@ -1,10 +1,13 @@
 """Gravatar — public profile by email hash.
 
-Gravatar is a legitimate public API: the MD5 (or SHA-256) of a lowercased,
-trimmed email maps to a public profile the user themselves created. If someone
-set up a Gravatar it often links their name, location and other accounts. If
-they didn't, you get nothing. This is the cleanest example of "public because
-the subject published it."
+Gravatar is a legitimate public API: a hash of the lowercased, trimmed email
+maps to a public profile the user themselves created. If someone set up a
+Gravatar it often links their name, location and other accounts. If they
+didn't, you get nothing. This is the cleanest example of "public because the
+subject published it."
+
+Tries the current REST API first (v3, SHA-256 hash; unauthenticated requests
+get the public fields), then the legacy JSON endpoint (MD5 hash).
 """
 from __future__ import annotations
 
@@ -22,14 +25,62 @@ class GravatarModule(Module):
 
     async def run(self, ident: Identifier, config, http) -> list[Finding]:
         email = ident.value.strip().lower()
+        sha256 = hashlib.sha256(email.encode()).hexdigest()
         md5 = hashlib.md5(email.encode()).hexdigest()
-        url = f"https://en.gravatar.com/{md5}.json"
-        resp = await http.get(url)
+
+        v3 = await self._v3(sha256, ident, http)
+        if v3 is not None:
+            return v3
+        return await self._legacy(md5, ident, http)
+
+    # -- v3 -------------------------------------------------------------------
+    async def _v3(self, sha256: str, ident: Identifier, http) -> list[Finding] | None:
+        resp = await http.get(f"https://api.gravatar.com/v3/profiles/{sha256}")
+        if resp.status_code == 404:
+            return []  # authoritative: no public profile
+        if resp.status_code != 200:
+            return None  # auth/rate-limit/outage -> try legacy
+        p = resp.json() or {}
+
+        data: dict = {}
+        discovered: list[Identifier] = []
+        for key in ("display_name", "location", "job_title", "company",
+                    "description", "pronouns"):
+            if p.get(key):
+                data[key] = p[key]
+        if p.get("display_name"):
+            discovered.append(self.discover(Kind.NAME, p["display_name"], ident.confidence))
+        if p.get("location"):
+            discovered.append(self.discover(Kind.LOCATION, p["location"],
+                                            ident.confidence * 0.8))
+
+        accounts = []
+        for acc in p.get("verified_accounts") or []:
+            if acc.get("is_hidden") or not acc.get("url"):
+                continue
+            accounts.append({"service": acc.get("service_label") or acc.get("service_type"),
+                             "url": acc["url"]})
+            discovered.append(self.discover(Kind.URL, acc["url"], ident.confidence))
+        if accounts:
+            data["verified_accounts"] = accounts
+        if p.get("avatar_url"):
+            data["avatar_url"] = p["avatar_url"]
+
+        # profile slug, e.g. https://gravatar.com/janedoe -> "janedoe"
+        profile_url = p.get("profile_url") or f"https://gravatar.com/{sha256}"
+        slug = profile_url.rstrip("/").rsplit("/", 1)[-1]
+        if slug and slug != sha256:
+            discovered.append(self.discover(Kind.USERNAME, slug, ident.confidence * 0.9))
+
+        return [self._finding(ident, profile_url, data, discovered)]
+
+    # -- legacy -----------------------------------------------------------------
+    async def _legacy(self, md5: str, ident: Identifier, http) -> list[Finding]:
+        resp = await http.get(f"https://en.gravatar.com/{md5}.json")
         if resp.status_code == 404:
             return []
         resp.raise_for_status()
-        payload = resp.json()
-        entries = payload.get("entry") or []
+        entries = (resp.json() or {}).get("entry") or []
         if not entries:
             return []
 
@@ -41,50 +92,45 @@ class GravatarModule(Module):
         if display:
             data["display_name"] = display
             discovered.append(self.discover(Kind.NAME, display, ident.confidence))
-
         username = e.get("preferredUsername")
         if username:
             data["username"] = username
             discovered.append(self.discover(Kind.USERNAME, username, ident.confidence))
-
-        for name in e.get("name", []) if isinstance(e.get("name"), list) else []:
-            formatted = name.get("formatted") if isinstance(name, dict) else None
-            if formatted:
-                discovered.append(self.discover(Kind.NAME, formatted, ident.confidence))
-
-        location = e.get("currentLocation")
-        if location:
-            data["location"] = location
-            discovered.append(self.discover(Kind.LOCATION, location, ident.confidence * 0.8))
+        name = e.get("name")
+        if isinstance(name, dict) and name.get("formatted"):
+            discovered.append(self.discover(Kind.NAME, name["formatted"], ident.confidence))
+        if e.get("currentLocation"):
+            data["location"] = e["currentLocation"]
+            discovered.append(self.discover(Kind.LOCATION, e["currentLocation"],
+                                            ident.confidence * 0.8))
 
         accounts = []
-        for acc in e.get("accounts", []) or []:
-            acc_url = acc.get("url")
-            shortname = acc.get("shortname") or acc.get("domain")
-            if acc_url:
-                accounts.append({"service": shortname, "url": acc_url})
-                discovered.append(self.discover(Kind.URL, acc_url, ident.confidence))
-            acc_user = acc.get("username")
-            if acc_user:
-                discovered.append(self.discover(Kind.USERNAME, acc_user, ident.confidence * 0.9))
+        for acc in e.get("accounts") or []:
+            if acc.get("url"):
+                accounts.append({"service": acc.get("shortname") or acc.get("domain"),
+                                 "url": acc["url"]})
+                discovered.append(self.discover(Kind.URL, acc["url"], ident.confidence))
+            if acc.get("username"):
+                discovered.append(self.discover(Kind.USERNAME, acc["username"],
+                                                ident.confidence * 0.9))
         if accounts:
             data["linked_accounts"] = accounts
+        for site in e.get("urls") or []:
+            if site.get("value"):
+                discovered.append(self.discover(Kind.URL, site["value"],
+                                                ident.confidence * 0.9))
 
-        for site in e.get("urls", []) or []:
-            site_url = site.get("value")
-            if site_url:
-                discovered.append(self.discover(Kind.URL, site_url, ident.confidence * 0.9))
+        return [self._finding(ident, e.get("profileUrl") or f"https://gravatar.com/{md5}",
+                              data, discovered)]
 
-        profile_url = e.get("profileUrl") or f"https://gravatar.com/{md5}"
-        return [
-            Finding(
-                module=self.name,
-                subject=ident,
-                title="Public Gravatar profile",
-                confidence=min(0.95, ident.confidence),
-                url=profile_url,
-                data=data,
-                evidence="Subject published a Gravatar profile tied to this email hash.",
-                discovered=discovered,
-            )
-        ]
+    def _finding(self, ident, url, data, discovered) -> Finding:
+        return Finding(
+            module=self.name,
+            subject=ident,
+            title="Public Gravatar profile",
+            confidence=min(0.95, ident.confidence),
+            url=url,
+            data=data,
+            evidence="Subject published a Gravatar profile tied to this email hash.",
+            discovered=discovered,
+        )

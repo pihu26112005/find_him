@@ -60,7 +60,14 @@ def to_markdown(result: RunResult) -> str:
         if f.evidence:
             lines.append(f"- **evidence:** {f.evidence}")
         for k, v in f.data.items():
-            lines.append(f"- **{k}:** {_fmt(v)}")
+            if isinstance(v, list) and v and all(isinstance(x, dict) for x in v):
+                lines.append(f"- **{k}:** ({len(v)})")
+                for item in v:
+                    lines.append("  - " + " · ".join(
+                        f"{ik}: {_fmt(iv)}" for ik, iv in item.items()
+                        if iv not in (None, "", [], {})))
+            else:
+                lines.append(f"- **{k}:** {_fmt(v)}")
         lines.append("")
 
     # --- all identifiers ------------------------------------------------------
@@ -101,13 +108,18 @@ def _conf_bar(c: float) -> str:
     return "▰" * filled + "▱" * (5 - filled)
 
 
+_MAX_LIST = 600  # long enough to print every site sherlock/holehe checked
+
+
 def _fmt(v) -> str:
     if isinstance(v, (list, tuple)):
         if not v:
             return "_(none)_"
         if all(isinstance(x, str) for x in v):
-            return ", ".join(f"`{x}`" for x in v[:20]) + ("…" if len(v) > 20 else "")
-        return json.dumps(v, ensure_ascii=False)[:500]
+            shown = ", ".join(f"`{x}`" for x in v[:_MAX_LIST])
+            extra = len(v) - _MAX_LIST
+            return f"({len(v)}) " + shown + (f" … (+{extra} more)" if extra > 0 else "")
+        return json.dumps(v, ensure_ascii=False)
     if isinstance(v, dict):
-        return json.dumps(v, ensure_ascii=False)[:500]
+        return json.dumps(v, ensure_ascii=False)
     return str(v)

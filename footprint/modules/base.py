@@ -32,6 +32,11 @@ class Module:
     #: confidence multiplier applied to identifiers this module discovers
     propagation: float = 0.9
 
+    #: wall-clock budget for one run() call, in seconds. None = the config's
+    #: per-request timeout + 2s, which suits single-request modules. Modules that
+    #: fan out internally (holehe, sherlock) set a larger budget.
+    run_timeout: float | None = None
+
     def is_configured(self, config: "Config") -> bool:
         """Return True if the module can run given the current config.
 

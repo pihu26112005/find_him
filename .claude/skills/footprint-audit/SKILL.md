@@ -54,9 +54,10 @@ OSINT is a graph search: each identifier can reveal others, which you re-query.
 
 ```
 email ──┬─ Gravatar profile ──► name, username, linked accounts, location
-        ├─ HIBP ──────────────► breach names + exposed data classes
+        ├─ XposedOrNot / HIBP ► breach names + exposed data classes
         ├─ holehe ────────────► which sites have an account for this email
-        └─ domain checks ─────► MX, disposable?, custom-domain WHOIS
+        ├─ local part ────────► username candidate ("jane.doe91@" -> jane.doe91)
+        └─ domain checks ─────► MX, mail provider, disposable?
 
 username ─┬─ GitHub profile ──► name, company, location, blog, twitter
           └─ Sherlock/Maigret ► public profile pages on ~400 sites
@@ -72,6 +73,15 @@ Rules of thumb:
   the same John. Flag it as a lead, not a fact.
 
 ## 2. Run the engine
+
+Setup once (virtualenv required — holehe won't build on old distro setuptools):
+
+```bash
+python3 -m venv .venv && .venv/bin/pip install -U pip setuptools wheel
+.venv/bin/pip install -r requirements.txt -r requirements-optional.txt
+```
+
+Then (with `.venv/bin/python -m footprint` if the venv isn't activated):
 
 ```bash
 # self-audit
@@ -105,6 +115,11 @@ results for the user:
   HIBP) from **leads** (a handle exists somewhere; same-person not proven).
 - Say plainly when the result is *empty* — for a careful person with a personal
   address, little or nothing public is the expected, healthy outcome.
+- Keep **inconclusive** separate from **absent**. holehe and sherlock mark
+  blocked, rate-limited and bot-walled checks as inconclusive; report the count
+  and never present them as "no account".
+- A username found from the email's *local part* is a guess (confidence 0.5),
+  so profiles found under it are leads until corroborated.
 - For self-audit, end with concrete remediation (lock down profiles, rotate
   breached passwords, data-broker opt-outs).
 
@@ -123,6 +138,8 @@ All open-source or public-API. This is the honest answer to "how do they do it":
 - **holehe** — email registered-or-not across ~120 sites (public reset/signup
   responses). The engine shells out to it.
 - **Have I Been Pwned** — breach exposure by email (names + data classes). Key.
+- **XposedOrNot** — free, keyless, open-source breach checker (names +
+  metadata). The engine's default breach source.
 - **Gravatar** — public profile + linked accounts by email hash. No key.
 - **GHunt** — for Gmail: Google account name, photo, Maps reviews, public
   calendar (needs Google cookies; add as an opt-in module).

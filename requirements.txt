@@ -4,7 +4,4 @@ httpx>=0.27,<1.0
 # Config files (optional — env vars work without it)
 pyyaml>=6.0
 
-# --- Optional, enable extra modules when installed ---
-# dnspython>=2.6          # MX resolution in dns_email module
-# holehe>=1.61            # account-existence module (shells out to `holehe`)
-# sherlock-project        # username-across-sites module (shells out to `sherlock`)
+# Extra modules (dnspython, holehe, sherlock) live in requirements-optional.txt

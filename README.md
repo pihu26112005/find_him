@@ -42,11 +42,16 @@ This repo implements 1–3, 5 and a conservative 6, with the hooks to add 4.
 ## Install
 
 ```bash
-pip install -r requirements.txt           # httpx + pyyaml (core)
-# optional, to light up more modules:
-pip install dnspython holehe sherlock-project
-cp config.example.yaml config.yaml        # add HIBP key etc. (gitignored)
+python3 -m venv .venv
+.venv/bin/pip install -U pip setuptools wheel
+.venv/bin/pip install -r requirements.txt                  # core: httpx + pyyaml
+.venv/bin/pip install -r requirements-optional.txt         # holehe, sherlock, dnspython
+cp config.example.yaml config.yaml                         # optional keys (gitignored)
 ```
+
+Use a virtualenv: `holehe` builds from source and fails against old distro
+setuptools. No API key is required — breach names come from the free
+XposedOrNot API; an HIBP key is an optional extra.
 
 ## Use
 
@@ -80,8 +85,8 @@ seed identifier(s)
  orchestrator ──┐  async fan-out, per-module timeouts, depth-limited
       │         │  discovered identifiers fed back in (confidence decays)
       ▼         │
-   modules ◄────┘  one public source each: gravatar, hibp, github_user,
-      │            dns_email, holehe, sherlock  (add your own)
+   modules ◄────┘  one public source each: gravatar, xposedornot, hibp,
+      │            email_localpart, dns_email, github_user, holehe, sherlock
       ▼
  RunResult ──► report.py ──► Markdown / JSON (+ same-person signals)
 ```
@@ -100,10 +105,28 @@ Subclass `Module`, declare which identifier `kinds` it `accepts`, return
 `orchestrator.default_modules()`. `footprint/modules/gravatar.py` is the
 reference example (~60 lines).
 
+## Modules
+
+| module | input | source | key? | what it returns |
+|--------|-------|--------|------|-----------------|
+| `gravatar` | email | Gravatar API v3 (+ legacy JSON) | no | public profile, verified accounts |
+| `xposedornot` | email | XposedOrNot | no | breach names, exposed data classes |
+| `hibp` | email | Have I Been Pwned | paid | breach names, exposed data classes |
+| `email_localpart` | email | (offline) | no | username candidates from the local part |
+| `dns_email` | email/domain | DNS, DoH fallback | no | MX, mail provider, disposable domain |
+| `holehe` | email | holehe library | no | sites with an account; masked recovery hints |
+| `github_user` | username | GitHub REST API | optional | public profile fields |
+| `sherlock` | username | sherlock library | no | public profile pages across ~480 sites |
+
+Results are split three ways everywhere: **found**, **absent**, and
+**inconclusive** (blocked, rate-limited, bot-walled). Inconclusive is never
+reported as absent.
+
 ## Test
 
 ```bash
-python tests/test_offline.py    # offline: engine logic, gate, report (no network)
+.venv/bin/python tests/test_offline.py   # engine logic, gate, report (no network)
+.venv/bin/python tests/test_modules.py   # every module vs mocked HTTP/tools (no network)
 ```
 
 ## Legitimate use

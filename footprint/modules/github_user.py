@@ -28,8 +28,16 @@ class GithubUserModule(Module):
             headers["Authorization"] = f"Bearer {config.github_token}"
 
         resp = await http.get(f"https://api.github.com/users/{username}", headers=headers)
-        if resp.status_code in (404, 403):
-            return []
+        if resp.status_code == 404:
+            return []  # authoritative: no such user
+        if resp.status_code in (403, 429):
+            # Rate limit or a proxy/policy block. "Couldn't check" is not
+            # "not found" -- surface it so the report shows the gap.
+            try:
+                msg = (resp.json() or {}).get("message", "")
+            except Exception:
+                msg = ""
+            raise RuntimeError(f"GitHub API {resp.status_code}: {msg[:160] or 'forbidden'}")
         resp.raise_for_status()
         u = resp.json()
         if u.get("type") != "User":

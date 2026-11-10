@@ -1,0 +1,11 @@
+# Optional modules. Each one lights up automatically once installed.
+# Install inside a virtualenv with an up-to-date pip/setuptools: holehe builds
+# from source and fails against old distro setuptools (e.g. Debian's on 3.13).
+#
+#   python3 -m venv .venv
+#   .venv/bin/pip install -U pip setuptools wheel
+#   .venv/bin/pip install -r requirements.txt -r requirements-optional.txt
+
+dnspython>=2.6          # MX lookups over plain DNS (DoH fallback needs nothing)
+holehe>=1.61            # email -> which sites have an account
+sherlock-project>=0.16  # username -> public profile pages on ~480 sites

@@ -91,10 +91,10 @@ class Orchestrator:
         result: RunResult,
     ) -> list[Finding]:
         async def _guarded(m: "Module") -> list[Finding]:
+            budget = m.run_timeout or (self.config.timeout_seconds + 2)
             try:
                 return await asyncio.wait_for(
-                    m.run(ident, self.config, http),
-                    timeout=self.config.timeout_seconds + 2,
+                    m.run(ident, self.config, http), timeout=budget
                 )
             except asyncio.TimeoutError:
                 result.errors.append(
@@ -118,17 +118,21 @@ class Orchestrator:
 def default_modules() -> list["Module"]:
     """Instantiate the built-in module set."""
     from .modules.dns_email import DnsEmailModule
+    from .modules.email_localpart import EmailLocalPartModule
     from .modules.github_user import GithubUserModule
     from .modules.gravatar import GravatarModule
     from .modules.hibp import HibpModule
     from .modules.holehe_runner import HoleheModule
     from .modules.sherlock_runner import SherlockModule
+    from .modules.xposedornot import XposedOrNotModule
 
     return [
         GravatarModule(),
         DnsEmailModule(),
-        GithubUserModule(),
+        EmailLocalPartModule(),
+        XposedOrNotModule(),
         HibpModule(),
+        GithubUserModule(),
         HoleheModule(),
         SherlockModule(),
     ]

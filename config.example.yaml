@@ -2,20 +2,32 @@
 # Everything is optional: a module with no key/tool is simply skipped and
 # reported as skipped. You never need all of it to get a useful report.
 
-# Breach exposure (recommended). Get a key: https://haveibeenpwned.com/API/Key
+# Breach exposure via HIBP (paid key: https://haveibeenpwned.com/API/Key).
+# Not required: the free XposedOrNot module covers breach names without a key.
 hibp_api_key: ""
 
 # Optional: raises GitHub's unauthenticated rate limit. A read-only token is fine.
 github_token: ""
 
 # Engine behaviour
-timeout_seconds: 15     # per-module network timeout
-max_depth: 2            # how many rounds of "discovered identifier -> re-query"
+timeout_seconds: 15     # per-request network timeout
+max_depth: 2            # rounds of "discovered identifier -> re-query"
 
 modules:
   enabled: []           # empty = every configured module; or list names to restrict
   disabled: []          # names to force off, e.g. ["holehe"]
 
-# Opt-out switches for the shell-out tools even if installed:
+# --- holehe (email -> which sites have an account) ---
 # holehe_disabled: true
+# holehe_password_recovery: false   # true also runs reset-flow modules (adobe, samsung, ...)
+# holehe_only: [instagram, twitter, spotify]   # restrict to these modules
+# holehe_concurrency: 12
+
+# --- sherlock (username -> profile pages) ---
 # sherlock_disabled: true
+# sherlock_nsfw: false
+# sherlock_sites: [GitHub, Reddit, LeetCode]   # restrict to these site names
+# sherlock_timeout: 15
+
+# --- xposedornot (free breach names) ---
+# xposedornot_disabled: true

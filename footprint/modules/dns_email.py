@@ -1,12 +1,16 @@
 """Email/domain hygiene checks — deliverability and disposable detection.
 
 No personal data here: this inspects the *domain* of an email, not the person.
-It answers "is this a real, deliverable, non-throwaway address?" which is the
-useful, low-risk signal for fraud/KYC and for self-audit ("is my address on a
-domain that leaks?"). MX resolution uses dnspython if installed; otherwise it
-degrades to the bundled disposable-domain check only.
+It answers "is this a real, deliverable, non-throwaway address, and who hosts
+its mail?" — the useful, low-risk signal for fraud/KYC and for self-audit.
+
+MX resolution: dnspython (plain DNS) first, then DNS-over-HTTPS via dns.google,
+which also works behind HTTPS-only proxies. A lookup that *fails* is reported as
+unknown — never as "no MX", which would be a false negative.
 """
 from __future__ import annotations
+
+import asyncio
 
 from ..models import Finding, Identifier, Kind
 from .base import Module
@@ -20,12 +24,26 @@ _DISPOSABLE = {
     "getnada.com", "maildrop.cc", "sharklasers.com", "dispostable.com",
 }
 
+# MX host suffix -> who runs the mailbox
+_MX_PROVIDERS = {
+    "google.com": "Google (Gmail / Workspace)",
+    "googlemail.com": "Google (Gmail / Workspace)",
+    "outlook.com": "Microsoft (Outlook / 365)",
+    "protection.outlook.com": "Microsoft 365",
+    "yahoodns.net": "Yahoo",
+    "zoho.com": "Zoho",
+    "zoho.in": "Zoho",
+    "protonmail.ch": "Proton Mail",
+    "icloud.com": "Apple iCloud",
+}
+
 
 class DnsEmailModule(Module):
     name = "dns_email"
     accepts = frozenset({Kind.EMAIL, Kind.DOMAIN})
     requires_config = False
     propagation = 1.0
+    run_timeout = 20.0
 
     async def run(self, ident: Identifier, config, http) -> list[Finding]:
         if ident.kind == Kind.EMAIL:
@@ -43,10 +61,16 @@ class DnsEmailModule(Module):
         is_disposable = domain in _DISPOSABLE
         data["disposable"] = is_disposable
 
-        mx = self._resolve_mx(domain)
-        if mx is not None:
+        mx, via = await self._resolve_mx(domain, http)
+        if mx is None:
+            data["mx_records"] = "unknown (DNS lookup failed)"
+        else:
             data["mx_records"] = mx
             data["has_mx"] = bool(mx)
+            data["mx_resolved_via"] = via
+            provider = _provider(mx)
+            if provider:
+                data["mail_provider"] = provider
 
         title = "Disposable/temporary email domain" if is_disposable else "Email domain info"
         conf = 0.9 if is_disposable else 0.4
@@ -63,14 +87,53 @@ class DnsEmailModule(Module):
             )
         ]
 
-    @staticmethod
-    def _resolve_mx(domain: str) -> list[str] | None:
-        try:
-            import dns.resolver  # type: ignore
-        except ImportError:
+    async def _resolve_mx(self, domain: str, http) -> tuple[list[str] | None, str]:
+        mx = await asyncio.to_thread(_dnspython_mx, domain)
+        if mx is not None:
+            return mx, "dns"
+        return await _doh_mx(domain, http), "doh:dns.google"
+
+
+def _dnspython_mx(domain: str) -> list[str] | None:
+    """[] = domain has no MX (authoritative); None = couldn't find out."""
+    try:
+        import dns.resolver  # type: ignore
+    except ImportError:
+        return None
+    try:
+        answers = dns.resolver.resolve(domain, "MX", lifetime=3.0)
+        return sorted(str(r.exchange).rstrip(".").lower() for r in answers)
+    except (dns.resolver.NXDOMAIN, dns.resolver.NoAnswer):
+        return []
+    except Exception:
+        return None
+
+
+async def _doh_mx(domain: str, http) -> list[str] | None:
+    try:
+        resp = await http.get("https://dns.google/resolve",
+                              params={"name": domain, "type": "MX"})
+        if resp.status_code != 200:
             return None
-        try:
-            answers = dns.resolver.resolve(domain, "MX", lifetime=5.0)
-            return sorted(str(r.exchange).rstrip(".") for r in answers)
-        except Exception:
-            return []
+        payload = resp.json()
+    except Exception:
+        return None
+    status = payload.get("Status")
+    if status == 3:  # NXDOMAIN
+        return []
+    if status != 0:
+        return None
+    out = []
+    for ans in payload.get("Answer") or []:
+        if ans.get("type") == 15 and ans.get("data"):
+            # "5 gmail-smtp-in.l.google.com." -> host
+            out.append(ans["data"].split()[-1].rstrip(".").lower())
+    return sorted(out)
+
+
+def _provider(mx: list[str]) -> str | None:
+    for host in mx:
+        for suffix, label in _MX_PROVIDERS.items():
+            if host == suffix or host.endswith("." + suffix):
+                return label
+    return None
