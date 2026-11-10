@@ -34,7 +34,9 @@ class GitlabUserModule(Module):
         if not username or "/" in username or " " in username:
             return []
 
-        resp = await http.get(f"{_API}/users", params={"username": username})
+        token = config.extra.get("gitlab_token")
+        headers = {"PRIVATE-TOKEN": token} if token else {}
+        resp = await http.get(f"{_API}/users", params={"username": username}, headers=headers)
         _raise_if_blocked(resp)
         resp.raise_for_status()
         users = resp.json() or []
@@ -42,13 +44,19 @@ class GitlabUserModule(Module):
             return []  # authoritative: no such user
         u = users[0]
 
-        detail = {}
+        detail, detail_note = {}, None
         if u.get("id") is not None:
-            rd = await http.get(f"{_API}/users/{u['id']}")
+            rd = await http.get(f"{_API}/users/{u['id']}", headers=headers)
             if rd.status_code == 200:
                 detail = rd.json() or {}
+            else:  # say so -- an absent bio must not read as "nothing public"
+                detail_note = (f"full profile not returned (HTTP {rd.status_code}); bio, "
+                               "location and linked accounts were not checked"
+                               + ("" if token else " -- set gitlab_token to read them"))
         merged = {**u, **detail}
         data = {k: merged[k] for k in _FIELDS if merged.get(k) not in (None, "", [], {})}
+        if detail_note:
+            data["profile_details"] = detail_note
 
         conf = ident.confidence
         discovered: list[Identifier] = []

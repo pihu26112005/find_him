@@ -404,6 +404,13 @@ def test_gitlab_user_profile():
     urls = {d.value for d in f[0].discovered if d.kind == Kind.URL}
     assert "https://www.linkedin.com/in/jane-doe" in urls
     assert _run(go(lambda r: httpx.Response(200, json=[]))) == []
+
+    def detail_forbidden(req):  # gitlab.com without a token
+        if req.url.path == "/api/v4/users":
+            return httpx.Response(200, json=[{"id": 7, "username": "jd", "name": "Jane"}])
+        return httpx.Response(403, json={"message": "403 Forbidden - Not authorized!"})
+    note = _run(go(detail_forbidden))[0].data["profile_details"]
+    assert "HTTP 403" in note and "not checked" in note
     try:
         _run(go(lambda r: httpx.Response(403)))
         raise AssertionError("403 must raise")

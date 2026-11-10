@@ -9,6 +9,10 @@ hibp_api_key: ""
 # Optional: raises GitHub's unauthenticated rate limit. A read-only token is fine.
 github_token: ""
 
+# Optional: GitLab personal access token (read_user scope). GitLab hides full
+# profiles (bio, location, linked accounts) from unauthenticated requests.
+# gitlab_token: ""
+
 # Engine behaviour
 timeout_seconds: 15     # per-request network timeout
 max_depth: 2            # rounds of "discovered identifier -> re-query"
